@@ -1,0 +1,106 @@
+name: "Backend Service Dev"
+
+on:
+  push:
+    branches:
+      - development
+    paths:
+      - "**"
+      - ".github/workflows/backend-service-dev.yml"
+  pull_request:
+    branches:
+      - development
+    paths:
+      - "**"
+      - ".github/workflows/backend-service-dev.yml"
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: dev-eks-cluster
+  ECR_REPOSITORY: dev-backend-service
+  IMAGE_TAG: ${{ github.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build and test
+        run: mvn --batch-mode verify
+
+      - name: Configure AWS credentials
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: github.event_name == 'push'
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        if: github.event_name == 'push'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          docker build --tag "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" .
+          docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+
+      - name: Set up kubectl
+        if: github.event_name == 'push'
+        uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+
+      - name: Configure kubectl for EKS
+        if: github.event_name == 'push'
+        run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
+
+      - name: Create database Secret
+        if: github.event_name == 'push'
+        env:
+          DB_INSTANCE_IDENTIFIER: dev-postgres
+        run: |
+          db_endpoint=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_INSTANCE_IDENTIFIER" \
+            --query 'DBInstances[0].Endpoint.Address' \
+            --output text)
+          secret_arn=$(aws rds describe-db-instances \
+            --db-instance-identifier "$DB_INSTANCE_IDENTIFIER" \
+            --query 'DBInstances[0].MasterUserSecret.SecretArn' \
+            --output text)
+          secret_json=$(aws secretsmanager get-secret-value \
+            --secret-id "$secret_arn" \
+            --query 'SecretString' \
+            --output text)
+          db_username=$(jq -r '.username' <<< "$secret_json")
+          db_password=$(jq -r '.password' <<< "$secret_json")
+          kubectl create secret generic backend-db \
+            --namespace default \
+            --from-literal=url="jdbc:postgresql://$db_endpoint:5432/appdb" \
+            --from-literal=username="$db_username" \
+            --from-literal=password="$db_password" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Deploy backend
+        if: github.event_name == 'push'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          sed "s|BACKEND_IMAGE|$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|" kubernetes/deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/backend-service --timeout=5m

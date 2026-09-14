@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS app_records (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL
+);
