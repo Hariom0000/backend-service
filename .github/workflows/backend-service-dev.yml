@@ -7,6 +7,7 @@ on:
     paths:
       - "**"
       - ".github/workflows/backend-service-dev.yml"
+  workflow_dispatch:
   pull_request:
     branches:
       - development
@@ -41,7 +42,7 @@ jobs:
         run: mvn --batch-mode verify
 
       - name: Configure AWS credentials
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
@@ -49,12 +50,12 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push image
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
@@ -62,17 +63,17 @@ jobs:
           docker push "$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
       - name: Set up kubectl
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: azure/setup-kubectl@v4
         with:
           version: latest
 
       - name: Configure kubectl for EKS
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         run: aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION"
 
       - name: Create database Secret
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         env:
           DB_INSTANCE_IDENTIFIER: dev-postgres
         run: |
@@ -98,7 +99,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
