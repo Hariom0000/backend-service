@@ -104,3 +104,4 @@ jobs:
         run: |
           sed "s|BACKEND_IMAGE|$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG|" kubernetes/deployment.yaml | kubectl apply -f -
           kubectl rollout status deployment/backend-service --timeout=5m
+          kubectl apply -f kubernetes/app-ingress.yaml
