@@ -10,8 +10,7 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-    - host: handsonlab.space
-      http:
+    - http:
         paths:
           - path: /
             pathType: Prefix
