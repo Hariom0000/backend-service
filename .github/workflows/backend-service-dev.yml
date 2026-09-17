@@ -99,6 +99,7 @@ jobs:
             --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy backend
+        id: deploy_backend
         if: github.event_name != 'pull_request'
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -107,4 +108,13 @@ jobs:
           kubectl rollout status deployment/backend-service --timeout=5m
           kubectl apply -f kubernetes/app-ingress.yaml
           kubectl wait --for=jsonpath='{.status.loadBalancer.ingress[0].hostname}' ingress/app-ingress --timeout=10m
-          echo "EKS ALB origin: $(kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+          alb_hostname=$(kubectl get ingress app-ingress -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "backend_origin_domain_name=$alb_hostname" >> "$GITHUB_OUTPUT"
+          echo "EKS ALB origin: $alb_hostname"
+
+          aws ssm put-parameter \
+            --name "/handsonlab/dev/backend-origin-domain-name" \
+            --type "String" \
+            --value "$alb_hostname" \
+            --overwrite \
+            --region "$AWS_REGION"
