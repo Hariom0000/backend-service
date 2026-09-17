@@ -11,4 +11,4 @@ server:
   port: 8080
 
 app:
-  cors-allowed-origin: ${APP_CORS_ALLOWED_ORIGIN:http://localhost:5173}
+  cors-allowed-origin: ${APP_CORS_ALLOWED_ORIGIN:https://handsonlab.space}
