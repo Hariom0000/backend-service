@@ -49,6 +49,20 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Ensure ECR repository exists
+        if: github.event_name != 'pull_request'
+        run: |
+          if ! aws ecr describe-repositories \
+            --repository-names "$ECR_REPOSITORY" \
+            --region "$AWS_REGION" >/dev/null 2>&1; then
+            aws ecr create-repository \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-tag-mutability IMMUTABLE \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256 \
+              --region "$AWS_REGION"
+          fi
+
       - name: Login to Amazon ECR
         if: github.event_name != 'pull_request'
         id: ecr
